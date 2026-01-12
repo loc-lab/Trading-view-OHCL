@@ -70,6 +70,40 @@ class CoinGeckoFetcher:
 
         return base_symbol.lower()
 
+    def fetch_volume_data(self, coin_id, days=1):
+        """
+        Fetch volume data from CoinGecko market_chart endpoint
+
+        Args:
+            coin_id: CoinGecko coin ID
+            days: Number of days
+
+        Returns:
+            pandas DataFrame with timestamp and volume
+        """
+        url = f"{self.base_url}/coins/{coin_id}/market_chart"
+        params = {
+            'vs_currency': 'usd',
+            'days': days
+        }
+
+        response = requests.get(url, params=params, timeout=30)
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch volume data: {response.status_code} - {response.text}")
+
+        data = response.json()
+
+        if not data or 'total_volumes' not in data:
+            return pd.DataFrame(columns=['timestamp', 'volume'])
+
+        # Extract volume data: [[timestamp, volume], ...]
+        volumes = data['total_volumes']
+        df = pd.DataFrame(volumes, columns=['timestamp', 'volume'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+
+        return df
+
     def fetch_ohlc_data(self, coin_id, days=1):
         """
         Fetch OHLC data from CoinGecko
@@ -87,7 +121,7 @@ class CoinGeckoFetcher:
             'days': days
         }
 
-        print(f"Fetching from: {url}")
+        print(f"Fetching OHLC from: {url}")
         print(f"Parameters: {params}")
 
         response = requests.get(url, params=params, timeout=30)
@@ -105,6 +139,20 @@ class CoinGeckoFetcher:
 
         # Convert timestamp to datetime
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+
+        # Fetch and merge volume data
+        print(f"Fetching volume data...")
+        volume_df = self.fetch_volume_data(coin_id, days)
+
+        if not volume_df.empty:
+            # Merge on timestamp with tolerance (volume data might have slightly different timestamps)
+            df = pd.merge_asof(df.sort_values('timestamp'),
+                              volume_df.sort_values('timestamp'),
+                              on='timestamp',
+                              direction='nearest',
+                              tolerance=pd.Timedelta('1h'))
+        else:
+            df['volume'] = 0
 
         # Calculate additional metrics
         df['price_change'] = df['close'] - df['open']
@@ -225,12 +273,16 @@ class CoinGeckoFetcher:
             open_close_move = day_close - day_open
             open_close_pct = (open_close_move / day_open) * 100
 
+            # Calculate daily volume (sum of all volumes for that day)
+            day_volume = group['volume'].sum() if 'volume' in group.columns else 0
+
             daily_stats.append({
                 'date': date,
                 'open': day_open,
                 'high': day_high,
                 'low': day_low,
                 'close': day_close,
+                'volume': day_volume,
                 'intraday_range': intraday_range,
                 'intraday_range_pct': intraday_range_pct,
                 'open_close_move': open_close_move,
@@ -251,6 +303,10 @@ class CoinGeckoFetcher:
             'max_intraday_range_pct': daily_df['intraday_range_pct'].max(),
             'min_intraday_range': daily_df['intraday_range'].min(),
             'min_intraday_range_pct': daily_df['intraday_range_pct'].min(),
+            'avg_volume': daily_df['volume'].mean(),
+            'max_volume': daily_df['volume'].max(),
+            'min_volume': daily_df['volume'].min(),
+            'total_volume': daily_df['volume'].sum(),
         }
 
     def export_to_tradingview_format(self, df):
@@ -310,8 +366,21 @@ def display_daily_moves(daily_df):
     display_df['intraday_range_pct'] = display_df['intraday_range_pct'].apply(lambda x: f"{x:.2f}%")
     display_df['open_close_pct'] = display_df['open_close_pct'].apply(lambda x: f"{x:+.2f}%")
 
+    # Format volume with K, M, B suffixes
+    def format_volume(vol):
+        if vol >= 1_000_000_000:
+            return f"${vol/1_000_000_000:.2f}B"
+        elif vol >= 1_000_000:
+            return f"${vol/1_000_000:.2f}M"
+        elif vol >= 1_000:
+            return f"${vol/1_000:.2f}K"
+        else:
+            return f"${vol:.2f}"
+
+    display_df['volume'] = display_df['volume'].apply(format_volume)
+
     # Select columns to display
-    display_cols = ['date', 'open', 'high', 'low', 'close', 'intraday_range', 'intraday_range_pct', 'open_close_pct']
+    display_cols = ['date', 'open', 'high', 'low', 'close', 'volume', 'intraday_range', 'intraday_range_pct', 'open_close_pct']
     display_df = display_df[display_cols]
 
     print("\n" + tabulate(display_df, headers='keys', tablefmt='grid', showindex=False))
@@ -467,6 +536,22 @@ Note:
             print(f"{'Avg Open-Close Move':.<35} ${avg_moves['avg_open_close_move']:,.{decimals}f} ({avg_moves['avg_open_close_pct']:+.2f}%)")
             print(f"{'Max Intraday Range':.<35} ${avg_moves['max_intraday_range']:,.{decimals}f} ({avg_moves['max_intraday_range_pct']:.2f}%)")
             print(f"{'Min Intraday Range':.<35} ${avg_moves['min_intraday_range']:,.{decimals}f} ({avg_moves['min_intraday_range_pct']:.2f}%)")
+
+            # Format volume with K, M, B suffixes
+            def format_vol(vol):
+                if vol >= 1_000_000_000:
+                    return f"${vol/1_000_000_000:.2f}B"
+                elif vol >= 1_000_000:
+                    return f"${vol/1_000_000:.2f}M"
+                elif vol >= 1_000:
+                    return f"${vol/1_000:.2f}K"
+                else:
+                    return f"${vol:,.2f}"
+
+            print(f"{'Avg Daily Volume':.<35} {format_vol(avg_moves['avg_volume'])}")
+            print(f"{'Max Daily Volume':.<35} {format_vol(avg_moves['max_volume'])}")
+            print(f"{'Min Daily Volume':.<35} {format_vol(avg_moves['min_volume'])}")
+            print(f"{'Total Volume':.<35} {format_vol(avg_moves['total_volume'])}")
             print(f"{'Number of Days':.<35} {len(daily_df)}")
 
         # Export if requested
