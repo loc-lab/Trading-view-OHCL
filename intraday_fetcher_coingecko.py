@@ -181,6 +181,62 @@ class CoinGeckoFetcher:
 
         return summary
 
+    def calculate_daily_moves(self, df):
+        """
+        Calculate intraday moves for each day
+
+        Returns:
+            DataFrame with daily statistics
+        """
+        # Add date column
+        df_copy = df.copy()
+        df_copy['date'] = df_copy['timestamp'].dt.date
+
+        # Group by date and calculate daily metrics
+        daily_stats = []
+
+        for date, group in df_copy.groupby('date'):
+            day_high = group['high'].max()
+            day_low = group['low'].min()
+            day_open = group.iloc[0]['open']
+            day_close = group.iloc[-1]['close']
+
+            # Calculate intraday move (high-low range)
+            intraday_range = day_high - day_low
+            intraday_range_pct = (intraday_range / day_open) * 100
+
+            # Calculate open-to-close move
+            open_close_move = day_close - day_open
+            open_close_pct = (open_close_move / day_open) * 100
+
+            daily_stats.append({
+                'date': date,
+                'open': day_open,
+                'high': day_high,
+                'low': day_low,
+                'close': day_close,
+                'intraday_range': intraday_range,
+                'intraday_range_pct': intraday_range_pct,
+                'open_close_move': open_close_move,
+                'open_close_pct': open_close_pct,
+                'num_candles': len(group)
+            })
+
+        return pd.DataFrame(daily_stats)
+
+    def calculate_average_moves(self, daily_df):
+        """Calculate average daily moves"""
+        return {
+            'avg_intraday_range': daily_df['intraday_range'].mean(),
+            'avg_intraday_range_pct': daily_df['intraday_range_pct'].mean(),
+            'avg_open_close_move': daily_df['open_close_move'].mean(),
+            'avg_open_close_pct': daily_df['open_close_pct'].mean(),
+            'max_intraday_range': daily_df['intraday_range'].max(),
+            'max_intraday_range_pct': daily_df['intraday_range_pct'].max(),
+            'min_intraday_range': daily_df['intraday_range'].min(),
+            'min_intraday_range_pct': daily_df['intraday_range_pct'].min(),
+        }
+
     def export_to_tradingview_format(self, df):
         """Export data in TradingView datafeed format"""
         tv_data = []
@@ -205,6 +261,24 @@ def display_table(df, num_rows=20):
 
     for col in ['open', 'high', 'low', 'close']:
         display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
+
+    print("\n" + tabulate(display_df, headers='keys', tablefmt='grid', showindex=False))
+
+
+def display_daily_moves(daily_df):
+    """Display daily intraday moves in a formatted table"""
+    display_df = daily_df.copy()
+    display_df['date'] = display_df['date'].apply(lambda x: x.strftime('%Y-%m-%d'))
+
+    for col in ['open', 'high', 'low', 'close', 'intraday_range', 'open_close_move']:
+        display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
+
+    display_df['intraday_range_pct'] = display_df['intraday_range_pct'].apply(lambda x: f"{x:.2f}%")
+    display_df['open_close_pct'] = display_df['open_close_pct'].apply(lambda x: f"{x:+.2f}%")
+
+    # Select columns to display
+    display_cols = ['date', 'open', 'high', 'low', 'close', 'intraday_range', 'intraday_range_pct', 'open_close_pct']
+    display_df = display_df[display_cols]
 
     print("\n" + tabulate(display_df, headers='keys', tablefmt='grid', showindex=False))
 
@@ -269,6 +343,31 @@ Supported days: 1, 7, 14, 30, 90, 180, 365, or 'max'
         print("-" * 80)
         for key, value in summary.items():
             print(f"{key:.<25} {value}")
+
+        # Calculate daily moves if more than 1 day
+        try:
+            days_int = int(args.days)
+            show_daily_analysis = days_int > 1
+        except ValueError:
+            show_daily_analysis = True  # For 'max' or other string values
+
+        if show_daily_analysis:
+            daily_df = fetcher.calculate_daily_moves(df)
+            avg_moves = fetcher.calculate_average_moves(daily_df)
+
+            # Display daily moves
+            print(f"\n📊 DAILY INTRADAY MOVES")
+            print("-" * 80)
+            display_daily_moves(daily_df)
+
+            # Display average moves
+            print(f"\n📈 AVERAGE DAILY MOVES")
+            print("-" * 80)
+            print(f"{'Avg Intraday Range':.<35} ${avg_moves['avg_intraday_range']:,.2f} ({avg_moves['avg_intraday_range_pct']:.2f}%)")
+            print(f"{'Avg Open-Close Move':.<35} ${avg_moves['avg_open_close_move']:,.2f} ({avg_moves['avg_open_close_pct']:+.2f}%)")
+            print(f"{'Max Intraday Range':.<35} ${avg_moves['max_intraday_range']:,.2f} ({avg_moves['max_intraday_range_pct']:.2f}%)")
+            print(f"{'Min Intraday Range':.<35} ${avg_moves['min_intraday_range']:,.2f} ({avg_moves['min_intraday_range_pct']:.2f}%)")
+            print(f"{'Number of Days':.<35} {len(daily_df)}")
 
         # Display table
         print(f"\n📈 OHLC DATA (Last {min(args.rows, len(df))} candles)")
