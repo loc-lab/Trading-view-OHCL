@@ -456,11 +456,6 @@ Note: Use --start-date/--end-date for date filtering, --min-price/--max-price fo
             print(f"{'Min Intraday Range':.<35} ${avg_moves['min_intraday_range']:,.{decimals}f} ({avg_moves['min_intraday_range_pct']:.2f}%)")
             print(f"{'Number of Days':.<35} {len(daily_df)}")
 
-        # Display table
-        print(f"\n📈 OHLC DATA (Last {min(args.rows, len(df))} candles)")
-        print("-" * 80)
-        display_table(df, args.rows)
-
         # Export if requested
         if args.export:
             tv_data = fetcher.export_to_tradingview_format(df)
