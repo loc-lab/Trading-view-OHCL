@@ -298,11 +298,14 @@ Examples:
   # Fetch 30-day data and filter for specific date range (Jan 1-7)
   python intraday_fetcher_coingecko.py BTCUSDT -d 30 --start-date 2026-01-01 --end-date 2026-01-07
 
-  # Fetch max data and filter for a week
-  python intraday_fetcher_coingecko.py BTCUSDT -d 90 --start-date 2025-12-15 --end-date 2025-12-21
+  # Fetch data and filter by price range (only show when BTC is between $90k-$95k)
+  python intraday_fetcher_coingecko.py BTCUSDT -d 30 --min-price 90000 --max-price 95000
+
+  # Combine date and price filters
+  python intraday_fetcher_coingecko.py BTCUSDT -d 90 --start-date 2025-12-01 --end-date 2025-12-31 --min-price 92000
 
 Supported days: 1, 7, 14, 30, 90, 180, 365, or 'max'
-Note: Use --start-date and --end-date to filter to specific date ranges
+Note: Use --start-date/--end-date for date filtering, --min-price/--max-price for price filtering
         """
     )
 
@@ -316,6 +319,8 @@ Note: Use --start-date and --end-date to filter to specific date ranges
     parser.add_argument('--coin-id', help='Use CoinGecko coin ID directly (e.g., bitcoin, ethereum)')
     parser.add_argument('--start-date', help='Start date for filtering (format: YYYY-MM-DD, e.g., 2026-01-01)')
     parser.add_argument('--end-date', help='End date for filtering (format: YYYY-MM-DD, e.g., 2026-01-07)')
+    parser.add_argument('--min-price', type=float, help='Minimum price filter (e.g., 90000)')
+    parser.add_argument('--max-price', type=float, help='Maximum price filter (e.g., 100000)')
 
     args = parser.parse_args()
 
@@ -362,6 +367,22 @@ Note: Use --start-date and --end-date to filter to specific date ranges
                 print(f"\n❌ No data found in the specified date range")
                 return 1
 
+        # Filter by price range if specified
+        if args.min_price or args.max_price:
+            if args.min_price:
+                # Filter to keep candles where the price touched or went above min_price
+                df = df[df['high'] >= args.min_price]
+                print(f"Filtering min price: ${args.min_price:,.2f}")
+
+            if args.max_price:
+                # Filter to keep candles where the price touched or went below max_price
+                df = df[df['low'] <= args.max_price]
+                print(f"Filtering max price: ${args.max_price:,.2f}")
+
+            if len(df) == 0:
+                print(f"\n❌ No data found in the specified price range")
+                return 1
+
         # Display summary
         summary = fetcher.format_summary(coin_id, df, market_data)
         print("\n📊 SUMMARY")
@@ -376,8 +397,8 @@ Note: Use --start-date and --end-date to filter to specific date ranges
         except ValueError:
             show_daily_analysis = True  # For 'max' or other string values
 
-        # Always show daily analysis if date range is specified
-        if args.start_date or args.end_date:
+        # Always show daily analysis if date range or price range is specified
+        if args.start_date or args.end_date or args.min_price or args.max_price:
             show_daily_analysis = True
 
         if show_daily_analysis:
