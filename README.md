@@ -2,15 +2,34 @@
 
 A powerful tool to fetch intraday OHLC (Open, High, Low, Close) data with volume for cryptocurrency tokens using the Binance API. Perfect for analyzing intraday moves, volume patterns, and price action.
 
+**✨ Now available with Web Interface! Run in your browser - no command line needed!**
+
 ## 🚀 Features
 
+- **Web Browser Interface**: Beautiful web UI for easy data fetching and analysis
 - **Real-time Intraday Data**: Fetch OHLC data with multiple time intervals (1m, 5m, 15m, 1h, etc.)
 - **Volume Analysis**: Track trading volume and quote volume
 - **Price Metrics**: Calculate price changes, percentage moves, and high-low ranges
 - **24-Hour Statistics**: Get comprehensive 24h stats including highs, lows, and total volume
 - **Multiple Export Formats**: Export to JSON (TradingView compatible) or CSV
-- **Beautiful CLI Interface**: Formatted tables with color-coded output
+- **Beautiful CLI Interface**: Formatted tables with color-coded output (command line)
 - **No Authentication Required**: Uses free Binance public API
+
+## 🌐 Quick Start (Web Interface)
+
+**Windows:**
+1. Double-click `setup.bat`
+2. Double-click `run_web.bat`
+3. Open http://localhost:5000 in your browser
+
+**Mac/Linux:**
+```bash
+./setup.sh
+./run_web.sh
+```
+Then open http://localhost:5000
+
+**See [QUICKSTART.md](QUICKSTART.md) for detailed beginner-friendly guide!**
 
 ## 📋 Requirements
 
