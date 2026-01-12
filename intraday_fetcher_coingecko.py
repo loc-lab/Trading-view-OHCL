@@ -295,10 +295,14 @@ Examples:
   # Fetch 7-day data for Ethereum with export
   python intraday_fetcher_coingecko.py ETHUSDT -d 7 -e output.json
 
-  # Fetch 30-day data for Solana
-  python intraday_fetcher_coingecko.py SOLUSDT -d 30
+  # Fetch 30-day data and filter for specific date range (Jan 1-7)
+  python intraday_fetcher_coingecko.py BTCUSDT -d 30 --start-date 2026-01-01 --end-date 2026-01-07
+
+  # Fetch max data and filter for a week
+  python intraday_fetcher_coingecko.py BTCUSDT -d 90 --start-date 2025-12-15 --end-date 2025-12-21
 
 Supported days: 1, 7, 14, 30, 90, 180, 365, or 'max'
+Note: Use --start-date and --end-date to filter to specific date ranges
         """
     )
 
@@ -310,6 +314,8 @@ Supported days: 1, 7, 14, 30, 90, 180, 365, or 'max'
     parser.add_argument('-e', '--export', help='Export data to JSON file (TradingView format)')
     parser.add_argument('--csv', help='Export data to CSV file')
     parser.add_argument('--coin-id', help='Use CoinGecko coin ID directly (e.g., bitcoin, ethereum)')
+    parser.add_argument('--start-date', help='Start date for filtering (format: YYYY-MM-DD, e.g., 2026-01-01)')
+    parser.add_argument('--end-date', help='End date for filtering (format: YYYY-MM-DD, e.g., 2026-01-07)')
 
     args = parser.parse_args()
 
@@ -337,6 +343,25 @@ Supported days: 1, 7, 14, 30, 90, 180, 365, or 'max'
         df = fetcher.fetch_ohlc_data(coin_id, args.days)
         market_data = fetcher.get_market_data(coin_id)
 
+        # Filter by date range if specified
+        original_df = df.copy()
+        if args.start_date or args.end_date:
+            from datetime import datetime as dt
+
+            if args.start_date:
+                start_dt = pd.to_datetime(args.start_date)
+                df = df[df['timestamp'] >= start_dt]
+                print(f"Filtering from: {args.start_date}")
+
+            if args.end_date:
+                end_dt = pd.to_datetime(args.end_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+                df = df[df['timestamp'] <= end_dt]
+                print(f"Filtering to: {args.end_date}")
+
+            if len(df) == 0:
+                print(f"\n❌ No data found in the specified date range")
+                return 1
+
         # Display summary
         summary = fetcher.format_summary(coin_id, df, market_data)
         print("\n📊 SUMMARY")
@@ -344,12 +369,16 @@ Supported days: 1, 7, 14, 30, 90, 180, 365, or 'max'
         for key, value in summary.items():
             print(f"{key:.<25} {value}")
 
-        # Calculate daily moves if more than 1 day
+        # Calculate daily moves if more than 1 day or date range is specified
         try:
             days_int = int(args.days)
             show_daily_analysis = days_int > 1
         except ValueError:
             show_daily_analysis = True  # For 'max' or other string values
+
+        # Always show daily analysis if date range is specified
+        if args.start_date or args.end_date:
+            show_daily_analysis = True
 
         if show_daily_analysis:
             daily_df = fetcher.calculate_daily_moves(df)
