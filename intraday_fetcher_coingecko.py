@@ -166,13 +166,22 @@ class CoinGeckoFetcher:
         latest = df.iloc[-1]
         oldest = df.iloc[0]
 
+        # Determine decimal places based on price magnitude
+        current_price = market_data['current_price']
+        if current_price < 0.01:
+            decimals = 6
+        elif current_price < 1:
+            decimals = 4
+        else:
+            decimals = 2
+
         summary = {
             'Coin': f"{market_data['name']} ({market_data['symbol']})",
-            'Current Price': f"${market_data['current_price']:,.2f}",
-            'Period Change': f"${latest['close'] - oldest['open']:,.2f} ({((latest['close'] - oldest['open']) / oldest['open'] * 100):.2f}%)",
-            '24h Change': f"${market_data['price_change_24h']:,.2f} ({market_data['price_change_pct_24h']:.2f}%)",
-            '24h High': f"${market_data['high_24h']:,.2f}",
-            '24h Low': f"${market_data['low_24h']:,.2f}",
+            'Current Price': f"${market_data['current_price']:,.{decimals}f}",
+            'Period Change': f"${latest['close'] - oldest['open']:,.{decimals}f} ({((latest['close'] - oldest['open']) / oldest['open'] * 100):.2f}%)",
+            '24h Change': f"${market_data['price_change_24h']:,.{decimals}f} ({market_data['price_change_pct_24h']:.2f}%)",
+            '24h High': f"${market_data['high_24h']:,.{decimals}f}",
+            '24h Low': f"${market_data['low_24h']:,.{decimals}f}",
             '24h Volume': f"${market_data['total_volume']:,.0f}",
             'Market Cap': f"${market_data['market_cap']:,.0f}",
             'Candles': len(df),
@@ -259,8 +268,17 @@ def display_table(df, num_rows=20):
     display_df['timestamp'] = display_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
     display_df['price_change_pct'] = display_df['price_change_pct'].apply(lambda x: f"{x:.2f}%")
 
+    # Determine decimal places based on price magnitude
+    avg_price = df['close'].mean()
+    if avg_price < 0.01:
+        decimals = 6
+    elif avg_price < 1:
+        decimals = 4
+    else:
+        decimals = 2
+
     for col in ['open', 'high', 'low', 'close']:
-        display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
+        display_df[col] = display_df[col].apply(lambda x: f"${x:,.{decimals}f}")
 
     print("\n" + tabulate(display_df, headers='keys', tablefmt='grid', showindex=False))
 
@@ -270,8 +288,17 @@ def display_daily_moves(daily_df):
     display_df = daily_df.copy()
     display_df['date'] = display_df['date'].apply(lambda x: x.strftime('%Y-%m-%d'))
 
+    # Determine decimal places based on price magnitude
+    avg_price = daily_df['close'].mean()
+    if avg_price < 0.01:
+        decimals = 6
+    elif avg_price < 1:
+        decimals = 4
+    else:
+        decimals = 2
+
     for col in ['open', 'high', 'low', 'close', 'intraday_range', 'open_close_move']:
-        display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
+        display_df[col] = display_df[col].apply(lambda x: f"${x:,.{decimals}f}")
 
     display_df['intraday_range_pct'] = display_df['intraday_range_pct'].apply(lambda x: f"{x:.2f}%")
     display_df['open_close_pct'] = display_df['open_close_pct'].apply(lambda x: f"{x:+.2f}%")
@@ -413,10 +440,20 @@ Note: Use --start-date/--end-date for date filtering, --min-price/--max-price fo
             # Display average moves
             print(f"\n📈 AVERAGE DAILY MOVES")
             print("-" * 80)
-            print(f"{'Avg Intraday Range':.<35} ${avg_moves['avg_intraday_range']:,.2f} ({avg_moves['avg_intraday_range_pct']:.2f}%)")
-            print(f"{'Avg Open-Close Move':.<35} ${avg_moves['avg_open_close_move']:,.2f} ({avg_moves['avg_open_close_pct']:+.2f}%)")
-            print(f"{'Max Intraday Range':.<35} ${avg_moves['max_intraday_range']:,.2f} ({avg_moves['max_intraday_range_pct']:.2f}%)")
-            print(f"{'Min Intraday Range':.<35} ${avg_moves['min_intraday_range']:,.2f} ({avg_moves['min_intraday_range_pct']:.2f}%)")
+
+            # Determine decimal places based on price magnitude
+            avg_price = df['close'].mean()
+            if avg_price < 0.01:
+                decimals = 6
+            elif avg_price < 1:
+                decimals = 4
+            else:
+                decimals = 2
+
+            print(f"{'Avg Intraday Range':.<35} ${avg_moves['avg_intraday_range']:,.{decimals}f} ({avg_moves['avg_intraday_range_pct']:.2f}%)")
+            print(f"{'Avg Open-Close Move':.<35} ${avg_moves['avg_open_close_move']:,.{decimals}f} ({avg_moves['avg_open_close_pct']:+.2f}%)")
+            print(f"{'Max Intraday Range':.<35} ${avg_moves['max_intraday_range']:,.{decimals}f} ({avg_moves['max_intraday_range_pct']:.2f}%)")
+            print(f"{'Min Intraday Range':.<35} ${avg_moves['min_intraday_range']:,.{decimals}f} ({avg_moves['min_intraday_range_pct']:.2f}%)")
             print(f"{'Number of Days':.<35} {len(daily_df)}")
 
         # Display table
