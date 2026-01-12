@@ -38,15 +38,22 @@ class CoinGeckoFetcher:
         }
 
     def get_coin_id(self, symbol):
-        """Convert trading pair symbol to CoinGecko coin ID"""
-        symbol = symbol.upper()
+        """Convert trading pair symbol to CoinGecko coin ID or use direct coin ID"""
 
-        # Direct lookup
-        if symbol in self.coin_map:
-            return self.coin_map[symbol]
+        # Check if it's already a coin ID (lowercase with hyphens, no USDT suffix)
+        # Examples: bitcoin, ethereum, orochi-network
+        if symbol.islower() or '-' in symbol:
+            # Likely already a CoinGecko coin ID
+            return symbol.lower()
+
+        symbol_upper = symbol.upper()
+
+        # Direct lookup in coin map
+        if symbol_upper in self.coin_map:
+            return self.coin_map[symbol_upper]
 
         # Try without USDT suffix
-        base_symbol = symbol.replace('USDT', '').replace('USD', '').lower()
+        base_symbol = symbol_upper.replace('USDT', '').replace('USD', '')
 
         # Search CoinGecko for the coin
         try:
@@ -61,7 +68,7 @@ class CoinGeckoFetcher:
         except:
             pass
 
-        return base_symbol
+        return base_symbol.lower()
 
     def fetch_ohlc_data(self, coin_id, days=1):
         """
@@ -316,27 +323,33 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Fetch 1-day data for Bitcoin
+  # Fetch 1-day data for Bitcoin (using trading pair)
   python intraday_fetcher_coingecko.py BTCUSDT
 
+  # Fetch 1-day data for Bitcoin (using CoinGecko ID)
+  python intraday_fetcher_coingecko.py bitcoin
+
   # Fetch 7-day data for Ethereum with export
-  python intraday_fetcher_coingecko.py ETHUSDT -d 7 -e output.json
+  python intraday_fetcher_coingecko.py ethereum -d 7 -e output.json
+
+  # Fetch data for Orochi Network (use CoinGecko ID for specific tokens)
+  python intraday_fetcher_coingecko.py orochi-network -d 30 --start-date 2026-01-01 --end-date 2026-01-12
 
   # Fetch 30-day data and filter for specific date range (Jan 1-7)
   python intraday_fetcher_coingecko.py BTCUSDT -d 30 --start-date 2026-01-01 --end-date 2026-01-07
-
-  # Fetch data and filter by price range (only show when BTC is between $90k-$95k)
-  python intraday_fetcher_coingecko.py BTCUSDT -d 30 --min-price 90000 --max-price 95000
 
   # Combine date and price filters
   python intraday_fetcher_coingecko.py BTCUSDT -d 90 --start-date 2025-12-01 --end-date 2025-12-31 --min-price 92000
 
 Supported days: 1, 7, 14, 30, 90, 180, 365, or 'max'
-Note: Use --start-date/--end-date for date filtering, --min-price/--max-price for price filtering
+Note:
+  - Symbol can be either a trading pair (BTCUSDT) or CoinGecko coin ID (bitcoin, orochi-network)
+  - Find CoinGecko IDs at: https://www.coingecko.com (look at the URL)
+  - Use --start-date/--end-date for date filtering, --min-price/--max-price for price filtering
         """
     )
 
-    parser.add_argument('symbol', nargs='?', help='Trading pair symbol (e.g., BTCUSDT, ETHUSDT)')
+    parser.add_argument('symbol', nargs='?', help='Trading pair (BTCUSDT) or CoinGecko coin ID (bitcoin, orochi-network)')
     parser.add_argument('-d', '--days', default='1',
                        help='Number of days (1, 7, 14, 30, 90, 180, 365, max) - default: 1')
     parser.add_argument('-r', '--rows', type=int, default=20,
