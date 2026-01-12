@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Intraday Token Data Fetcher - CoinGecko Edition
+Intraday Token Data Fetcher - Multi-API Edition
 Fetches OHLC (Open, High, Low, Close) data with volume for crypto tokens
-using CoinGecko's free public API.
+using CoinGecko's free public API or CoinMarketCap API.
 """
 
 import requests
@@ -12,6 +12,7 @@ import json
 import argparse
 from tabulate import tabulate
 import time
+import os
 
 
 class CoinGeckoFetcher:
@@ -325,6 +326,147 @@ class CoinGeckoFetcher:
         return tv_data
 
 
+class CoinMarketCapFetcher:
+    """Fetches intraday token data from CoinMarketCap API"""
+
+    def __init__(self, api_key=None):
+        self.base_url = "https://pro-api.coinmarketcap.com/v1"
+        self.api_key = api_key or os.getenv('CMC_API_KEY')
+
+        if not self.api_key:
+            raise Exception("CoinMarketCap API key is required. Set CMC_API_KEY environment variable or pass --cmc-api-key")
+
+        self.headers = {
+            'X-CMC_PRO_API_KEY': self.api_key,
+            'Accept': 'application/json'
+        }
+
+        # Map common symbols to CMC IDs
+        self.symbol_map = {
+            'BTCUSDT': 'BTC',
+            'ETHUSDT': 'ETH',
+            'BNBUSDT': 'BNB',
+            'ADAUSDT': 'ADA',
+            'SOLUSDT': 'SOL',
+            'XRPUSDT': 'XRP',
+            'DOTUSDT': 'DOT',
+            'DOGEUSDT': 'DOGE',
+            'MATICUSDT': 'MATIC',
+            'LINKUSDT': 'LINK',
+            'AVAXUSDT': 'AVAX',
+            'UNIUSDT': 'UNI',
+            'ATOMUSDT': 'ATOM',
+            'LTCUSDT': 'LTC',
+            'ALGOUSDT': 'ALGO',
+        }
+
+    def get_symbol(self, symbol):
+        """Convert trading pair to CMC symbol"""
+        symbol_upper = symbol.upper()
+
+        if symbol_upper in self.symbol_map:
+            return self.symbol_map[symbol_upper]
+
+        # Remove USDT/USD suffix
+        return symbol_upper.replace('USDT', '').replace('USD', '')
+
+    def fetch_ohlcv_data(self, symbol, time_start, time_end):
+        """
+        Fetch OHLCV data from CoinMarketCap
+
+        Args:
+            symbol: CMC symbol (e.g., 'BTC', 'ETH')
+            time_start: Start timestamp (ISO format)
+            time_end: End timestamp (ISO format)
+
+        Returns:
+            pandas DataFrame with OHLCV data
+        """
+        url = f"{self.base_url}/cryptocurrency/quotes/historical"
+
+        params = {
+            'symbol': symbol,
+            'time_start': time_start,
+            'time_end': time_end,
+            'interval': '1d',  # Daily OHLCV
+            'convert': 'USD'
+        }
+
+        print(f"Fetching OHLC from CMC: {url}")
+        print(f"Parameters: {params}")
+
+        response = requests.get(url, headers=self.headers, params=params, timeout=30)
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch CMC data: {response.status_code} - {response.text}")
+
+        data = response.json()
+
+        if data['status']['error_code'] != 0:
+            raise Exception(f"CMC API error: {data['status']['error_message']}")
+
+        quotes = data['data']['quotes']
+
+        if not quotes:
+            raise Exception("No data returned from CoinMarketCap")
+
+        # Parse CMC response into OHLCV format
+        ohlcv_data = []
+        for quote in quotes:
+            timestamp = pd.to_datetime(quote['timestamp'])
+            usd_quote = quote['quote']['USD']
+
+            ohlcv_data.append({
+                'timestamp': timestamp,
+                'open': usd_quote.get('open', usd_quote['price']),
+                'high': usd_quote.get('high', usd_quote['price']),
+                'low': usd_quote.get('low', usd_quote['price']),
+                'close': usd_quote['price'],
+                'volume': usd_quote.get('volume_24h', 0)
+            })
+
+        df = pd.DataFrame(ohlcv_data)
+
+        # Calculate additional metrics
+        df['price_change'] = df['close'] - df['open']
+        df['price_change_pct'] = ((df['close'] - df['open']) / df['open'] * 100)
+        df['high_low_range'] = df['high'] - df['low']
+        df['range_pct'] = ((df['high'] - df['low']) / df['open'] * 100)
+
+        return df
+
+    def get_latest_quote(self, symbol):
+        """Get latest quote data for a symbol"""
+        url = f"{self.base_url}/cryptocurrency/quotes/latest"
+        params = {
+            'symbol': symbol,
+            'convert': 'USD'
+        }
+
+        response = requests.get(url, headers=self.headers, params=params, timeout=10)
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch CMC quote: {response.text}")
+
+        data = response.json()
+
+        if data['status']['error_code'] != 0:
+            raise Exception(f"CMC API error: {data['status']['error_message']}")
+
+        quote_data = data['data'][symbol]['quote']['USD']
+        coin_data = data['data'][symbol]
+
+        return {
+            'name': coin_data['name'],
+            'symbol': coin_data['symbol'],
+            'current_price': quote_data['price'],
+            'price_change_24h': quote_data.get('price_change_24h', 0),
+            'price_change_pct_24h': quote_data.get('percent_change_24h', 0),
+            'volume_24h': quote_data.get('volume_24h', 0),
+            'market_cap': quote_data.get('market_cap', 0),
+        }
+
+
 def display_table(df, num_rows=20):
     """Display OHLC data in a formatted table"""
     display_df = df[['timestamp', 'open', 'high', 'low', 'close', 'price_change_pct']].tail(num_rows).copy()
@@ -388,33 +530,30 @@ def display_daily_moves(daily_df):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Fetch intraday OHLC data for crypto tokens using CoinGecko API',
+        description='Fetch intraday OHLC data for crypto tokens using CoinGecko or CoinMarketCap API',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Fetch 1-day data for Bitcoin (using trading pair)
-  python intraday_fetcher_coingecko.py BTCUSDT
-
-  # Fetch 1-day data for Bitcoin (using CoinGecko ID)
-  python intraday_fetcher_coingecko.py bitcoin
-
-  # Fetch 7-day data for Ethereum with export
-  python intraday_fetcher_coingecko.py ethereum -d 7 -e output.json
-
-  # Fetch data for Orochi Network (use CoinGecko ID for specific tokens)
-  python intraday_fetcher_coingecko.py orochi-network -d 30 --start-date 2026-01-01 --end-date 2026-01-12
-
-  # Fetch 30-day data and filter for specific date range (Jan 1-7)
+  # Fetch data using CoinGecko (default, no API key needed)
   python intraday_fetcher_coingecko.py BTCUSDT -d 30 --start-date 2026-01-01 --end-date 2026-01-07
 
-  # Combine date and price filters
-  python intraday_fetcher_coingecko.py BTCUSDT -d 90 --start-date 2025-12-01 --end-date 2025-12-31 --min-price 92000
+  # Fetch data using CoinMarketCap (requires API key)
+  python intraday_fetcher_coingecko.py BTCUSDT --api coinmarketcap --cmc-api-key YOUR_KEY --start-date 2026-01-01 --end-date 2026-01-07
 
-Supported days: 1, 7, 14, 30, 90, 180, 365, or 'max'
+  # Or set environment variable: export CMC_API_KEY=your_key_here
+  python intraday_fetcher_coingecko.py BTCUSDT --api coinmarketcap --start-date 2026-01-01 --end-date 2026-01-07
+
+  # Fetch from both APIs for comparison
+  python intraday_fetcher_coingecko.py BTCUSDT --api both --cmc-api-key YOUR_KEY --start-date 2026-01-01 --end-date 2026-01-07
+
+  # CoinGecko with coin ID
+  python intraday_fetcher_coingecko.py orochi-network --start-date 2026-01-01 --end-date 2026-01-12
+
+Supported days: 1, 7, 14, 30, 90, 180, 365, or 'max' (CoinGecko only)
 Note:
-  - Symbol can be either a trading pair (BTCUSDT) or CoinGecko coin ID (bitcoin, orochi-network)
-  - Find CoinGecko IDs at: https://www.coingecko.com (look at the URL)
-  - Use --start-date/--end-date for date filtering, --min-price/--max-price for price filtering
+  - CoinGecko: Free, no API key needed, supports coin IDs
+  - CoinMarketCap: Requires API key, get one at https://coinmarketcap.com/api/
+  - Use --start-date/--end-date for date range (required for CMC)
         """
     )
 
@@ -430,10 +569,21 @@ Note:
     parser.add_argument('--end-date', help='End date for filtering (format: YYYY-MM-DD, e.g., 2026-01-07)')
     parser.add_argument('--min-price', type=float, help='Minimum price filter (e.g., 90000)')
     parser.add_argument('--max-price', type=float, help='Maximum price filter (e.g., 100000)')
+    parser.add_argument('--api', choices=['coingecko', 'coinmarketcap', 'both'], default='coingecko',
+                       help='API to use: coingecko (default), coinmarketcap, or both for comparison')
+    parser.add_argument('--cmc-api-key', help='CoinMarketCap API key (or set CMC_API_KEY env variable)')
 
     args = parser.parse_args()
 
-    fetcher = CoinGeckoFetcher()
+    # Initialize fetchers based on API selection
+    cg_fetcher = None
+    cmc_fetcher = None
+
+    if args.api in ['coingecko', 'both']:
+        cg_fetcher = CoinGeckoFetcher()
+
+    if args.api in ['coinmarketcap', 'both']:
+        cmc_fetcher = CoinMarketCapFetcher(args.cmc_api_key)
 
     try:
         if not args.symbol and not args.coin_id:
